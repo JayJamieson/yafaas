@@ -12,6 +12,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "esbuild": "^0.19.6"
+    "esbuild": "^0.19.6",
+    "undici": "^5.27.2"
   }
 }
