@@ -1,5 +1,6 @@
 import { Client } from "./client.js";
 import * as ExitListener from "./exitListener.js";
+import { loadFunction } from "./functionLoader.js";
 
 /**
  * Heavily inspired from https://github.com/aws/aws-lambda-nodejs-runtime-interface-client/blob/main/src/index.mjs.
@@ -9,14 +10,14 @@ import * as ExitListener from "./exitListener.js";
  * - Reuses most function calling code in Runtime.js
  *
  * The focus should be on events bus and function manager. This is where the magic happens for proxying HTTP
- * requests to function and return response or Fire-and-Forget events from S3 where no response is needed.
+ * requests to Request-Response function or Fire-and-Forget events from S3 where no response is needed.
  */
 
 if (process.argv.length < 3) {
   throw new Error("No handler specified");
 }
 
-const appDir = process.cwd(); // /var/task
+const appDir =  process.env.FUNCTION_DIR || process.cwd(); // defaults /var/task
 const handler = process.argv[2]; // usually index.handler
 
 console.log(`Executing '${handler}' in function directory '${appDir}'`);
@@ -49,9 +50,10 @@ async function run(appDir, handler) {
   process.on("beforeExit", ExitListener.invoke);
 
   // load user function
+  const handlerFunc = await loadFunction(appDir, handler);
 
+  await handlerFunc({foo: "bar"});
   // run event reader loop
-
 }
 
 await run(appDir, handler);
