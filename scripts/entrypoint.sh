@@ -6,7 +6,7 @@ if [ $# -ne 1 ]; then
 fi
 
 export _HANDLER="$1"
-# export FUNCTION_DIR="/var/task"
+
 
 RUNTIME_ENTRYPOINT=/var/runtime/bootstrap
 
