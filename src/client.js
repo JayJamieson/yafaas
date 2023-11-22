@@ -1,4 +1,5 @@
 import { request } from "undici";
+import http from "node:http";
 
 export class Client {
 
@@ -32,7 +33,7 @@ export class Client {
    * @param {string} id
    * @param {string} data
    */
-  postEventResponse(id, data) {
+  postEventResponse(id, data, callback) {
     const options = {
       ...this.defaultOptions,
       method: "GET",
@@ -40,7 +41,7 @@ export class Client {
       body: data
     }
 
-    return request(this.endpoint, options);
+    return request(this.endpoint, options).then((_) => callback());
   }
 
   /**
@@ -48,8 +49,9 @@ export class Client {
    * to event bus.
    *
    * @param {string} error
+   * @param {function} callback
    */
-  postRuntimeError(error) {
+  postRuntimeError(error, callback) {
     const options = {
       ...this.defaultOptions,
       method: "GET",
@@ -57,7 +59,7 @@ export class Client {
       body: error
     }
 
-    return request(this.endpoint, options);
+    return request(this.endpoint, options).then((_) => callback());
   }
 
   /**
@@ -65,8 +67,9 @@ export class Client {
    *
    * @param {string} id
    * @param {string} error
+   * @param {function} callback
    */
-  postError(id, error) {
+  postError(id, error, callback) {
     const options = {
       ...this.defaultOptions,
       method: "GET",
@@ -74,7 +77,7 @@ export class Client {
       body: error
     }
 
-    return request(this.endpoint, options);
+    return request(this.endpoint, options).then((_) => callback());
   }
 
 }

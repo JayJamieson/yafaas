@@ -5,8 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
-    "build": "cd src && node build.js && cd ..",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "cd src && node build.js && cd .."
   },
   "keywords": [],
   "author": "",

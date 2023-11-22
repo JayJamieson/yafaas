@@ -1,7 +1,7 @@
 import { Client } from "./client.js";
 import * as ExitListener from "./exitListener.js";
 import { loadFunction } from "./functionLoader.js";
-
+import { Runtime } from "./runtime.js";
 /**
  * Heavily inspired from https://github.com/aws/aws-lambda-nodejs-runtime-interface-client/blob/main/src/index.mjs.
  * - Removed response streaming.
@@ -28,10 +28,12 @@ async function run(appDir, handler) {
 
   let errorCallbacks = {
     uncaughtException: (error) => {
-      console.log("uncaughtException",error);
+      console.log("uncaughtException", error);
+      client.postRuntimeError(JSON.stringify(error));
     },
     unhandledRejection: (error) => {
       console.log("unhandledRejection", error);
+      client.postRuntimeError(JSON.stringify(error));
     }
   }
 
@@ -45,15 +47,11 @@ async function run(appDir, handler) {
     errorCallbacks.uncaughtException(error);
   });
 
-  // setup before exit handler
   ExitListener.reset();
   process.on("beforeExit", ExitListener.invoke);
 
-  // load user function
   const handlerFunc = await loadFunction(appDir, handler);
 
-  await handlerFunc({foo: "bar"});
-  // run event reader loop
 }
 
 await run(appDir, handler);
