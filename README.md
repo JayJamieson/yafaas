@@ -4,6 +4,15 @@ The purpose of the yafaas is to show how a function as a service could be implem
 
 This project is not intented to be used as an actual service in production, but I'm not stopping you if you do.
 
+## Build
+
+- `npm run build`
+- `docker build -t yafaas .`
+
+## Run
+
+- `docker run --rm yafaas`
+
 ## Architecture
 
 ![Alt text](architecture.png)
