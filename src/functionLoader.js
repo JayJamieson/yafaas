@@ -16,12 +16,10 @@ export async function loadFunction(appDir, handler) {
   const handlerFunc = resolveHandler(app, handlerName);
 
   if (!handlerFunc) {
-    throw new HandlerNotFound(
-      `${handler} is undefined or not exported`,
-    );
+    throw new HandlerNotFound(`${handler} is undefined or not exported`);
   }
 
-  if (typeof handlerFunc !== 'function') {
+  if (typeof handlerFunc !== "function") {
     throw new HandlerNotFound(`${handler} is not a function`);
   }
 
@@ -39,8 +37,8 @@ async function tryImport(appDir, filename) {
   } catch (e) {
     if (e instanceof SyntaxError) {
       throw new UserCodeSyntaxError(e);
-    } else if (e.code !== undefined && e.code === 'MODULE_NOT_FOUND') {
-      console.log('globalPaths', JSON.stringify(require('module').globalPaths));
+    } else if (e.code !== undefined && e.code === "MODULE_NOT_FOUND") {
+      console.log("globalPaths", JSON.stringify(require("module").globalPaths));
       throw new ImportModuleError(e);
     } else {
       throw e;
@@ -52,7 +50,7 @@ async function tryImport(appDir, filename) {
  * Resolve the user's handler function from the module.
  */
 function resolveHandler(module, prop) {
-  return prop.split('.').reduce((nested, key) => {
+  return prop.split(".").reduce((nested, key) => {
     return nested && nested[key];
   }, module);
 }

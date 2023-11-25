@@ -10,10 +10,15 @@ function randomlyThrowError() {
   }
 }
 
-export async function handler(data) {
-  console.log("Hello world: ", JSON.stringify(data, 2));
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function handler(data, context) {
+  console.log("Hello world: ", JSON.stringify({...data, ...context}, 2));
 
   randomlyThrowError();
+  sleep(2000).then((r)=> randomlyThrowError());
 
   return {
     message: "hello event service",

@@ -17,13 +17,12 @@ if (process.argv.length < 3) {
   throw new Error("No handler specified");
 }
 
-const appDir =  process.env.FUNCTION_DIR || process.cwd(); // defaults /var/task
+const appDir = process.env.FUNCTION_DIR || process.cwd(); // defaults /var/task
 const handler = process.argv[2]; // usually index.handler
 
 console.log(`Executing '${handler}' in function directory '${appDir}'`);
 
 async function run(appDir, handler) {
-  // setup event service client
   const client = new Client(process.env.EVENTS_API);
 
   let errorCallbacks = {
@@ -34,16 +33,14 @@ async function run(appDir, handler) {
     unhandledRejection: (error) => {
       console.log("unhandledRejection", JSON.stringify(error));
       client.postRuntimeError(JSON.stringify(error), () => process.exit(128));
-    }
-  }
+    },
+  };
 
   process.on("unhandledRejection", (error) => {
-    // TODO: post startup error
     errorCallbacks.unhandledRejection(error);
   });
 
   process.on("uncaughtException", (error) => {
-    // TODO: post startup error
     errorCallbacks.uncaughtException(error);
   });
 

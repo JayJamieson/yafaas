@@ -3,7 +3,6 @@ import { toError } from "./util.js";
 
 /** @typedef {import("./client").Client} Client */
 
-
 /**
  *
  * @param {Client} client

@@ -1,4 +1,4 @@
-"use strict"
+"use strict";
 
 const EXIT_SYMBOL = Symbol.for("yafaas.beforeExit");
 const noop = () => {};

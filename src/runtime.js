@@ -1,5 +1,6 @@
 import * as ExitListener from "./exitListener.js";
 import * as CallbackContextBuilder from "./callbackContext.js";
+import { toError } from "./util.js";
 
 /** @typedef {import("./client").Client} Client */
 export class Runtime {
@@ -61,13 +62,13 @@ export class Runtime {
 
   #setErrorCallbacks(eventId) {
     this.errorCallbacks.uncaughtException = (error) => {
-      this.client.postError(eventId, error, () => {
+      this.client.postError(eventId, toError(error), () => {
         process.exit(128);
       });
     };
 
     this.errorCallbacks.unhandledRejection = (error) => {
-      this.client.postError(eventId, error, () => {
+      this.client.postError(eventId, toError(error), () => {
         process.exit(128);
       });
     };
