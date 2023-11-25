@@ -28,12 +28,12 @@ async function run(appDir, handler) {
 
   let errorCallbacks = {
     uncaughtException: (error) => {
-      console.log("uncaughtException", error);
-      client.postRuntimeError(JSON.stringify(error));
+      console.log("uncaughtException", JSON.stringify(error));
+      client.postRuntimeError(JSON.stringify(error), () => process.exit(128));
     },
     unhandledRejection: (error) => {
-      console.log("unhandledRejection", error);
-      client.postRuntimeError(JSON.stringify(error));
+      console.log("unhandledRejection", JSON.stringify(error));
+      client.postRuntimeError(JSON.stringify(error), () => process.exit(128));
     }
   }
 
@@ -52,6 +52,7 @@ async function run(appDir, handler) {
 
   const handlerFunc = await loadFunction(appDir, handler);
 
+  new Runtime(client, handlerFunc, errorCallbacks).scheduleInvoke();
 }
 
 await run(appDir, handler);
