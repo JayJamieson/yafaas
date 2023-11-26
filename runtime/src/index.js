@@ -44,6 +44,15 @@ async function run(appDir, handler) {
     errorCallbacks.uncaughtException(error);
   });
 
+  process.on("SIGINT", () => {
+    console.log("SIGINT Exiting...");
+    process.exit(0);
+  });
+  process.on("SIGTERM", () => {
+    console.log("SIGTERM Exiting...");
+    process.exit(0);
+  });
+
   ExitListener.reset();
   process.on("beforeExit", ExitListener.invoke);
 

@@ -44,6 +44,7 @@ export class Runtime {
       this.#setErrorCallbacks(ctx.eventId);
       this.#setExitListener(ctx.eventId, markDone);
 
+      // user function code aka not a Lambda
       let result = this.handler(
         JSON.parse(body),
         ctx.addCallbacks(callbackContext),
@@ -62,13 +63,17 @@ export class Runtime {
 
   #setErrorCallbacks(eventId) {
     this.errorCallbacks.uncaughtException = (error) => {
-      this.client.postError(eventId, toError(error), () => {
+      const err = toError(error);
+      this.client.postError(eventId, err, () => {
+        console.error("Runtime:uncaughtException",err);
         process.exit(128);
       });
     };
 
     this.errorCallbacks.unhandledRejection = (error) => {
-      this.client.postError(eventId, toError(error), () => {
+      const err = toError(error);
+      this.client.postError(eventId, err, () => {
+        console.error("Runtime:unhandledRejection",err);
         process.exit(128);
       });
     };
@@ -78,6 +83,7 @@ export class Runtime {
     ExitListener.set(() => {
       markDone();
       this.client.postEventResponse(eventId, null, () => this.scheduleInvoke());
+      console.log("Scheduling next invocation and waiting for events...");
     });
   }
 }

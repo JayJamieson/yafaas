@@ -1,5 +1,6 @@
 import { request } from "undici";
 import http from "node:http";
+import { toError } from "./util";
 
 export class Client {
   #agent;
@@ -66,13 +67,6 @@ export class Client {
   postEventResponse(id, event, callback) {
     const data = JSON.stringify(event === undefined ? null : event);
 
-    const options = {
-      ...this.defaultOptions,
-      method: "GET",
-      path: `yafaas/events/${id}/response`,
-      body: data,
-    };
-
     this.#post(`/yafaas/events/${id}/response`, data, {}, callback);
   }
 
@@ -112,7 +106,7 @@ export class Client {
    */
   #post(path, body, headers, callback) {
     const options = {
-      hostname: this.hostname,
+      hostname: this.host,
       port: this.port,
       path: path,
       method: "POST",
@@ -123,7 +117,7 @@ export class Client {
         },
         headers || {}
       ),
-      agent: this.agent,
+      agent: this.#agent,
     };
 
     const request = http.request(options, (response) => {
@@ -132,16 +126,20 @@ export class Client {
           callback();
         })
         .on("error", (e) => {
+          console.log("response:error",toError(e));
           throw e;
         })
         .on("data", () => {});
     });
+
     request
       .on("error", (e) => {
         if (e.code === "ECONNREFUSED") {
           console.error("Event service unreachable");
+          console.log("message:", e.message);
           process.exit(128);
         }
+        console.log("request:error",toError(e));
         throw e;
       })
       .end(body, "utf-8");

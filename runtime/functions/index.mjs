@@ -15,12 +15,12 @@ function sleep(ms) {
 }
 
 export async function handler(data, context) {
+
+  // await sleep(2000);
   console.log("Hello world: ", JSON.stringify({...data, ...context}, 2));
 
-  randomlyThrowError();
-  sleep(2000).then((r)=> randomlyThrowError());
 
   return {
-    message: "hello event service",
+    message: "hello event service from not a lambda",
   };
 }
