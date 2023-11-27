@@ -1,15 +1,20 @@
 import * as ExitListener from "./exitListener.js";
 import { toError } from "./util.js";
 
-/** @typedef {import("./client").Client} Client */
+/** @typedef {import("./client.js").Client} Client */
 
 /**
- *
  * @param {Client} client
  * @param {string} id
- * @param {function} scheduleNext
+ * @param {Function} scheduleNext
+ * @returns {[Function, {callbackWaitsForEmptyEventLoop: boolean, succeed: Function, fail: Function, done: Function}, Function]}
  */
 function buildRawCallbackContext(client, id, scheduleNext) {
+  /**
+   *
+   * @param {Error} error
+   * @param {Function} callback
+   */
   const postError = (error, callback) => {
     const errorBody = toError(error);
     console.error("Error", JSON.stringify(errorBody));
@@ -17,6 +22,13 @@ function buildRawCallbackContext(client, id, scheduleNext) {
   };
 
   let isInvokeDone = false;
+
+  /**
+   *
+   * @param {object} result
+   * @param {Function} callback
+   * @returns
+   */
   const complete = (result, callback) => {
     if (isInvokeDone) {
       console.error(
@@ -31,6 +43,11 @@ function buildRawCallbackContext(client, id, scheduleNext) {
 
   let waitForEmptyEventLoop = true;
 
+  /**
+   *
+   * @param {Error|null} error
+   * @param {object} result
+   */
   const callback = function (error, result) {
     ExitListener.reset();
     if (error !== undefined && error !== null) {
@@ -48,6 +65,10 @@ function buildRawCallbackContext(client, id, scheduleNext) {
     }
   };
 
+  /**
+   * @param {Error|null} error
+   * @param {object} result
+   */
   const done = (error, result) => {
     ExitListener.reset();
     if (error !== undefined && error !== null) {
@@ -57,15 +78,21 @@ function buildRawCallbackContext(client, id, scheduleNext) {
     }
   };
 
+  /**
+   * @param {object} result
+   */
   const succeed = (result) => {
     done(null, result);
   };
 
-  const fail = (err) => {
-    if (err === undefined || err === null) {
-      done("handled");
+  /**
+   * @param {Error} error
+   */
+  const fail = (error) => {
+    if (error === undefined || error === null) {
+      done(null, { message: "handled" });
     } else {
-      done(err, null);
+      done(error, {});
     }
   };
 
@@ -92,13 +119,18 @@ function buildRawCallbackContext(client, id, scheduleNext) {
 
 /**
  * Wraps callback context such that only first call succeeds.
- * @param {function} callback
- * @param {object} callbackContext
- * @param {function} markDone
+ * @param {Function} callback
+ * @param {{callbackWaitsForEmptyEventLoop: boolean, succeed: Function, fail: Function, done: Function}} callbackContext
+ * @param {Function} markDone
+ * @returns {[Function, {callbackWaitsForEmptyEventLoop: boolean, succeed: Function, fail: Function, done: Function}, Function]}
  */
 function wrapCallbackContext(callback, callbackContext, markDone) {
   let completed = false;
 
+  /**
+   * @param {Function} toWrap
+   * @returns {Function}
+   */
   const onlyOnce = function (toWrap) {
     return function () {
       if (!completed) {
@@ -121,7 +153,8 @@ function wrapCallbackContext(callback, callbackContext, markDone) {
  *
  * @param {Client} client
  * @param {string} id
- * @param {function} scheduleInvoke
+ * @param {Function} scheduleInvoke
+ * @returns {[Function, {callbackWaitsForEmptyEventLoop: boolean, succeed: Function, fail: Function, done: Function}, Function]}
  */
 export function build(client, id, scheduleInvoke) {
   const rawCallbackContext = buildRawCallbackContext(

@@ -7,7 +7,7 @@ import path from "node:path";
  *
  * @param {string} appDir
  * @param {string} handler form of `filename.functionName
- * @returns {function~handlerFunc}
+ * @returns {Promise<Function>}
  */
 export async function loadFunction(appDir, handler) {
   const [module, handlerName] = splitHandlerString(handler);
@@ -26,6 +26,12 @@ export async function loadFunction(appDir, handler) {
   return handlerFunc;
 }
 
+/**
+ *
+ * @param {string} appDir
+ * @param {string} filename
+ * @return {Promise<{ handler: (event: object, ctx: object) => Promise<any>}>}
+ */
 async function tryImport(appDir, filename) {
   const fileDir = path.resolve(appDir, filename);
   const filepath = `${fileDir}.mjs`;
@@ -34,6 +40,7 @@ async function tryImport(appDir, filename) {
     const _ = await fs.stat(filepath);
 
     return await import(filepath);
+
   } catch (e) {
     if (e instanceof SyntaxError) {
       throw new UserCodeSyntaxError(e);
@@ -47,10 +54,15 @@ async function tryImport(appDir, filename) {
 }
 
 /**
- * Resolve the user's handler function from the module.
+ *
+ * @param {object} module
+ * @param {string} prop
+ * @returns {Function}
  */
 function resolveHandler(module, prop) {
+  // @ts-ignore
   return prop.split(".").reduce((nested, key) => {
+    // @ts-ignore
     return nested && nested[key];
   }, module);
 }

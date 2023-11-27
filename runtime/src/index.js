@@ -22,6 +22,10 @@ const handler = process.argv[2]; // usually index.handler
 
 console.log(`Executing '${handler}' in function directory '${appDir}'`);
 
+/**
+ * @param {string} appDir
+ * @param {string} handler
+ */
 async function run(appDir, handler) {
   const client = new Client(process.env.EVENTS_API);
 

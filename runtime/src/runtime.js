@@ -2,12 +2,12 @@ import * as ExitListener from "./exitListener.js";
 import * as CallbackContextBuilder from "./callbackContext.js";
 import { toError } from "./util.js";
 
-/** @typedef {import("./client").Client} Client */
+/** @typedef {import("./client.js").Client} Client */
 export class Runtime {
   /**
    * @param {Client} client
-   * @param {function} handlerFunc
-   * @param {object} errorCallbacks
+   * @param {Function} handlerFunc
+   * @param {{uncaughtException: Function, unhandledRejection: Function}} errorCallbacks
    */
   constructor(client, handlerFunc, errorCallbacks) {
     this.client = client;
@@ -61,39 +61,51 @@ export class Runtime {
     }
   }
 
+  /**
+   * @param {string} eventId
+   */
   #setErrorCallbacks(eventId) {
-    this.errorCallbacks.uncaughtException = (error) => {
+    this.errorCallbacks.uncaughtException = (/** @type {Error} */ error) => {
       const err = toError(error);
       this.client.postError(eventId, err, () => {
-        console.error("Runtime:uncaughtException",err);
+        console.error("Runtime:uncaughtException", err);
         process.exit(128);
       });
     };
 
-    this.errorCallbacks.unhandledRejection = (error) => {
+    this.errorCallbacks.unhandledRejection = (/** @type {Error} */ error) => {
       const err = toError(error);
       this.client.postError(eventId, err, () => {
-        console.error("Runtime:unhandledRejection",err);
+        console.error("Runtime:unhandledRejection", err);
         process.exit(128);
       });
     };
   }
 
+  /**
+   *
+   * @param {string} eventId
+   * @param {Function} markDone
+   */
   #setExitListener(eventId, markDone) {
     ExitListener.set(() => {
       markDone();
-      this.client.postEventResponse(eventId, null, () => this.scheduleInvoke());
+      this.client.postEventResponse(eventId, {}, () => this.scheduleInvoke());
       console.log("Scheduling next invocation and waiting for events...");
     });
   }
 }
 
 class Context {
+  /**
+   * @param {object} headers
+   */
   constructor(headers) {
     this.headers = headers;
   }
 
   get eventId() {
+    // @ts-ignore
     return this.headers["event-id"];
   }
 
@@ -106,5 +118,12 @@ class Context {
   }
 }
 
+/**
+ *
+ * @param {Function|Promise<any>} maybePromise
+ * @returns
+ */
 const isPromise = (maybePromise) =>
-  maybePromise && maybePromise.then && typeof maybePromise.then === "function";
+maybePromise && maybePromise instanceof Promise &&
+  maybePromise.then &&
+  typeof maybePromise.then === "function";

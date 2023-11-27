@@ -1,15 +1,20 @@
-import { request } from "undici";
 import http from "node:http";
-import { toError } from "./util";
+import { toError } from "./util.js";
 
 export class Client {
   #agent;
+  host;
+  port;
 
   /**
    * Create client for interacting with function events API.
-   * @param {string} endpoint
+   * @param {string|undefined} endpoint
    */
   constructor(endpoint) {
+    if(endpoint === undefined) {
+      throw new Error("endpoint not provided, undefined or null");
+    }
+
     const [host, port] = endpoint.split(":");
     this.host = host;
     this.port = parseInt(port, 10);
@@ -60,9 +65,9 @@ export class Client {
 
   /**
    * Send function invocation response to event bus.
-   *
    * @param {string} id
    * @param {object} event
+   * @param {Function} callback
    */
   postEventResponse(id, event, callback) {
     const data = JSON.stringify(event === undefined ? null : event);
@@ -75,7 +80,7 @@ export class Client {
    * to event bus.
    *
    * @param {Error} error
-   * @param {function} callback
+   * @param {Function} callback
    */
   postRuntimeError(error, callback) {
     const data = JSON.stringify(error === undefined ? null : error);
@@ -87,8 +92,8 @@ export class Client {
    * Respond with error from function invocation to event bus.
    *
    * @param {string} id
-   * @param {error} error
-   * @param {function} callback
+   * @param {Error} error
+   * @param {Function} callback
    */
   postError(id, error, callback) {
     const data = JSON.stringify(error === undefined ? null : error);
@@ -102,7 +107,7 @@ export class Client {
    * @param {string} path
    * @param {string} body
    * @param {object} headers
-   * @param {function} callback
+   * @param {Function} callback
    */
   #post(path, body, headers, callback) {
     const options = {
@@ -134,6 +139,7 @@ export class Client {
 
     request
       .on("error", (e) => {
+        // @ts-ignore
         if (e.code === "ECONNREFUSED") {
           console.error("Event service unreachable");
           console.log("message:", e.message);
