@@ -60,7 +60,7 @@ func New() *Server {
 
 		r.Delete("/functions/{id}", srv.deleteFunction)
 
-		r.Get("/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
+		r.Get("/functions/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("logs\n"))
 		})
 
