@@ -1,10 +1,14 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/client"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -17,20 +21,30 @@ type Event struct {
 
 type EventBus struct {
 	rx chan Event
+
 	db map[string]any
 }
 
 type Server struct {
 	mux      *chi.Mux
 	eventBus *EventBus
+	docker   *client.Client
 }
 
 func New() *Server {
 	mux := chi.NewRouter()
 	mux.Use(middleware.Logger)
 
+	// TODO cleanup panic silly
+	cli, err := client.NewClientWithOpts(client.FromEnv)
+
+	if err != nil {
+		panic(err)
+	}
+
 	srv := &Server{
-		mux: mux,
+		mux:    mux,
+		docker: cli,
 		eventBus: &EventBus{
 			db: make(map[string]any),
 			rx: make(chan Event), // unbuffered as we want to block until we get events
@@ -38,23 +52,20 @@ func New() *Server {
 	}
 
 	mux.Route("/yafaas", func(r chi.Router) {
-		r.Get("/functions", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("functions\n"))
-		})
+		r.Get("/functions", srv.listFunctions)
 
-		r.Get("/create", func(w http.ResponseWriter, r *http.Request) {
+		r.Post("/functions", func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("create\n"))
 		})
 
-		r.Get("/delete", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("delete\n"))
-		})
+		r.Delete("/functions/{id}", srv.deleteFunction)
 
 		r.Get("/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
 			w.Write([]byte("logs\n"))
 		})
 
 		r.Get("/events/next", srv.handleNextEvent)
+
 		r.Post("/events", srv.handleEvent)
 
 		r.Post("/events/{id}/response", func(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +90,60 @@ func New() *Server {
 	return &Server{
 		mux: mux,
 	}
+}
+
+func (s *Server) deleteFunction(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	err := s.docker.ContainerRemove(r.Context(), id, types.ContainerRemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	})
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	w.Write([]byte(`{"message": "Ok"}`))
+}
+
+func (s *Server) listFunctions(w http.ResponseWriter, r *http.Request) {
+	containers, err := s.docker.ContainerList(r.Context(), types.ContainerListOptions{})
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	// TODO Fix this with proper chi render functions and models
+	containerList := make([]map[string]string, 0)
+
+	for _, container := range containers {
+		containerDTO := map[string]string{
+			"id":     container.ID,
+			"name":   container.Names[0],
+			"state":  container.State,
+			"status": container.Status,
+		}
+
+		containerList = append(containerList, containerDTO)
+	}
+
+	resp, err := json.Marshal(containerList)
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	w.Write(resp)
 }
 
 func (s *Server) handleNextEvent(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +179,7 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("%v", err)
 		w.Write([]byte(err.Error()))
+		return
 	}
 
 	event := Event{
