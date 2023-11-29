@@ -1,17 +1,22 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"path"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
+	"github.com/mholt/archiver/v4"
 )
 
 type Event struct {
@@ -54,9 +59,7 @@ func New() *Server {
 	mux.Route("/yafaas", func(r chi.Router) {
 		r.Get("/functions", srv.listFunctions)
 
-		r.Post("/functions", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("create\n"))
-		})
+		r.Post("/functions", srv.createFunction)
 
 		r.Delete("/functions/{id}", srv.deleteFunction)
 
@@ -92,6 +95,132 @@ func New() *Server {
 	}
 }
 
+func (s *Server) createFunction(w http.ResponseWriter, r *http.Request) {
+	createReq := map[string]any{}
+	body, err := io.ReadAll(r.Body)
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	err = json.Unmarshal(body, &createReq)
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	fFile, err := os.CreateTemp("", "function")
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	fString := createReq["function"]
+
+	// TODO fix this silly use of any and string and byte conversion
+	fFile.Write([]byte(string(fString.(string))))
+	fName := fFile.Name()
+
+	fFile.Close()
+
+	defer os.Remove(fFile.Name())
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	files, err := archiver.FilesFromDisk(nil, map[string]string{
+		path.Join(cwd, "../runtime", "Dockerfile"):     "Dockerfile",
+		path.Join(cwd, "../runtime", "dist/index.mjs"): "dist/index.mjs",
+		fName: "functions/index.mjs",
+		path.Join(cwd, "../runtime", "scripts/entrypoint.sh"): "scripts/entrypoint.sh",
+		path.Join(cwd, "../runtime", "scripts/bootstrap"):     "scripts/bootstrap",
+	})
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+	buf := &bytes.Buffer{}
+
+	format := archiver.Tar{}
+
+	err = format.Archive(r.Context(), buf, files)
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	// TODO do something with the build output
+	resp, err := s.docker.ImageBuild(r.Context(), buf, types.ImageBuildOptions{
+		Tags:       []string{"yafaas"},
+		Dockerfile: "Dockerfile",
+		NoCache:    true,
+		Remove:     true,
+	})
+
+	// TODO figure out how to get image ID
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	defer resp.Body.Close()
+
+	// TODO do something useful with this
+	buildOutput, err := io.ReadAll(resp.Body)
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	log.Print(string(buildOutput))
+
+	createResp, err := s.docker.ContainerCreate(r.Context(), &container.Config{
+		Image: "yafaas",
+	}, nil, nil, nil, "")
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	err = s.docker.ContainerStart(r.Context(), createResp.ID, types.ContainerStartOptions{})
+
+	if err != nil {
+		msg := fmt.Sprintf("%v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(msg))
+		return
+	}
+
+	w.Write([]byte(fmt.Sprintf(`{"id": "%s"}`, createResp.ID)))
+}
+
 func (s *Server) deleteFunction(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -120,21 +249,7 @@ func (s *Server) listFunctions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO Fix this with proper chi render functions and models
-	containerList := make([]map[string]string, 0)
-
-	for _, container := range containers {
-		containerDTO := map[string]string{
-			"id":     container.ID,
-			"name":   container.Names[0],
-			"state":  container.State,
-			"status": container.Status,
-		}
-
-		containerList = append(containerList, containerDTO)
-	}
-
-	resp, err := json.Marshal(containerList)
+	resp, err := json.Marshal(containers)
 
 	if err != nil {
 		msg := fmt.Sprintf("%v", err)
