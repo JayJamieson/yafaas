@@ -27,7 +27,9 @@ type Event struct {
 type EventBus struct {
 	rx chan Event
 
-	db map[string]any
+	logDB       map[string][]string
+	containerDB map[string]string
+	eventDB     map[string][]byte
 }
 
 type Server struct {
@@ -51,8 +53,10 @@ func New() *Server {
 		mux:    mux,
 		docker: cli,
 		eventBus: &EventBus{
-			db: make(map[string]any),
-			rx: make(chan Event), // unbuffered as we want to block until we get events
+			eventDB:     make(map[string][]byte),
+			logDB:       make(map[string][]string),
+			containerDB: make(map[string]string),
+			rx:          make(chan Event), // unbuffered as we want to block until we get events
 		},
 	}
 
@@ -87,7 +91,7 @@ func New() *Server {
 	})
 
 	mux.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("yafaas\n"))
+		w.Write([]byte("yafaas v0.0.1\n"))
 	})
 
 	return &Server{
@@ -96,7 +100,7 @@ func New() *Server {
 }
 
 func (s *Server) createFunction(w http.ResponseWriter, r *http.Request) {
-	createReq := map[string]any{}
+	createReq := map[string]string{}
 	body, err := io.ReadAll(r.Body)
 
 	if err != nil {
@@ -124,10 +128,8 @@ func (s *Server) createFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fString := createReq["function"]
-
 	// TODO fix this silly use of any and string and byte conversion
-	fFile.Write([]byte(string(fString.(string))))
+	fFile.Write([]byte(createReq["function"]))
 	fName := fFile.Name()
 
 	fFile.Close()
@@ -170,11 +172,13 @@ func (s *Server) createFunction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// TODO do something with the build output
+	image := fmt.Sprintf("yafaas:%s", createReq["name"])
 	resp, err := s.docker.ImageBuild(r.Context(), buf, types.ImageBuildOptions{
-		Tags:       []string{"yafaas"},
-		Dockerfile: "Dockerfile",
-		NoCache:    true,
-		Remove:     true,
+		Tags:           []string{image},
+		Dockerfile:     "Dockerfile",
+		NoCache:        true,
+		Remove:         true,
+		SuppressOutput: true,
 	})
 
 	// TODO figure out how to get image ID
@@ -184,11 +188,11 @@ func (s *Server) createFunction(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(msg))
 		return
 	}
-
 	defer resp.Body.Close()
 
 	// TODO do something useful with this
-	buildOutput, err := io.ReadAll(resp.Body)
+	_, err = io.Copy(io.Discard, resp.Body)
+
 	if err != nil {
 		msg := fmt.Sprintf("%v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -196,11 +200,9 @@ func (s *Server) createFunction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Print(string(buildOutput))
-
 	createResp, err := s.docker.ContainerCreate(r.Context(), &container.Config{
-		Image: "yafaas",
-	}, nil, nil, nil, "")
+		Image: image,
+	}, nil, nil, nil, createReq["name"])
 
 	if err != nil {
 		msg := fmt.Sprintf("%v", err)
@@ -217,6 +219,8 @@ func (s *Server) createFunction(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(msg))
 		return
 	}
+
+	s.eventBus.containerDB[createReq["name"]] = createResp.ID
 
 	w.Write([]byte(fmt.Sprintf(`{"id": "%s"}`, createResp.ID)))
 }
@@ -279,7 +283,7 @@ func (s *Server) handleNextEvent(w http.ResponseWriter, r *http.Request) {
 			id := event.id.String()
 
 			// set to nil as it will be filled with data from response endpoint
-			s.eventBus.db[id] = make([]byte, 0)
+			s.eventBus.eventDB[id] = []byte{}
 
 			w.Header().Add("Event-Id", id)
 			w.Write(event.data)
