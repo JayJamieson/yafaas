@@ -1,43 +1,40 @@
 import http from "node:http";
-import { toError } from "./util.js";
+import { toSerializableError } from "./util.js";
+
+interface EventResponse {
+  body: string;
+  headers: http.IncomingHttpHeaders;
+}
 
 export class Client {
-  #agent;
-  host;
-  port;
+  private agent: http.Agent;
+  private host: string;
+  private port: number;
 
-  /**
-   * Create client for interacting with function events API.
-   * @param {string|undefined} endpoint
-   */
-  constructor(endpoint) {
-    if(endpoint === undefined) {
+  constructor(endpoint: string) {
+
+    if (endpoint === undefined) {
       throw new Error("endpoint not provided, undefined or null");
     }
 
     const [host, port] = endpoint.split(":");
+
     this.host = host;
     this.port = parseInt(port, 10);
 
-    this.#agent = new http.Agent({
+    this.agent = new http.Agent({
       keepAlive: true,
       maxSockets: 1,
     });
   }
 
-  /**
-   * Gets next invocation event. Blocks until event is available
-   * to be read from event bus.
-   *
-   * @returns {Promise<{body: string, headers: object}>}
-   */
-  nextEvent() {
+  nextEvent(): Promise<EventResponse> {
     const options = {
       hostname: this.host,
       port: this.port,
       path: "/yafaas/events/next",
       method: "GET",
-      agent: this.#agent,
+      agent: this.agent,
     };
 
     return new Promise((resolve, reject) => {
@@ -63,53 +60,30 @@ export class Client {
     });
   }
 
-  /**
-   * Send function invocation response to event bus.
-   * @param {string} id
-   * @param {object} event
-   * @param {Function} callback
-   */
-  postEventResponse(id, event, callback) {
+  postEventResponse(id: string, event: unknown, callback: () => void): void {
     const data = JSON.stringify(event === undefined ? null : event);
 
-    this.#post(`/yafaas/events/${id}/response`, data, {}, callback);
+    this.post(`/yafaas/events/${id}/response`, data, {}, callback);
   }
 
-  /**
-   * Send runtime error probably unrelated to function invocation to
-   * to event bus.
-   *
-   * @param {Error} error
-   * @param {Function} callback
-   */
-  postRuntimeError(error, callback) {
+  postRuntimeError(error: Error | unknown, callback: () => void): void {
     const data = JSON.stringify(error === undefined ? null : error);
 
-    this.#post("/yafaas/error", data, {}, callback);
+    this.post("/yafaas/error", data, {}, callback);
   }
 
-  /**
-   * Respond with error from function invocation to event bus.
-   *
-   * @param {string} id
-   * @param {Error} error
-   * @param {Function} callback
-   */
-  postError(id, error, callback) {
+  postError(id: string, error: Error | unknown, callback: () => void): void {
     const data = JSON.stringify(error === undefined ? null : error);
 
-    this.#post(`/yafaas/function/${id}/error`, data, {}, callback);
+    this.post(`/yafaas/function/${id}/error`, data, {}, callback);
   }
 
-  /**
-   * Send post request
-   *
-   * @param {string} path
-   * @param {string} body
-   * @param {object} headers
-   * @param {Function} callback
-   */
-  #post(path, body, headers, callback) {
+  private post(
+    path: string,
+    body: string,
+    headers: Record<string, string>,
+    callback: () => void
+  ): void {
     const options = {
       hostname: this.host,
       port: this.port,
@@ -122,7 +96,7 @@ export class Client {
         },
         headers || {}
       ),
-      agent: this.#agent,
+      agent: this.agent,
     };
 
     const request = http.request(options, (response) => {
@@ -130,22 +104,21 @@ export class Client {
         .on("end", () => {
           callback();
         })
-        .on("error", (e) => {
-          console.log("response:error",toError(e));
+        .on("error", (e: Error) => {
+          console.log("response:error", toSerializableError(e));
           throw e;
         })
         .on("data", () => {});
     });
 
     request
-      .on("error", (e) => {
-        // @ts-ignore
+      .on("error", (e: NodeJS.ErrnoException) => {
         if (e.code === "ECONNREFUSED") {
-          console.error("Event service unreachable");
+          console.log("Event service unreachable");
           console.log("message:", e.message);
           process.exit(128);
         }
-        console.log("request:error",toError(e));
+        console.log("request:error", toSerializableError(e));
         throw e;
       })
       .end(body, "utf-8");

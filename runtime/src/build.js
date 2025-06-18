@@ -2,7 +2,7 @@ import { build } from "esbuild";
 
 const shared = {
   bundle: true,
-  entryPoints: ["index.js"],
+  entryPoints: ["index.ts"],
   logLevel: "info",
   minify: false,
   platform: "node",
