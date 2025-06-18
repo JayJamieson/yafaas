@@ -122,16 +122,11 @@ class Context {
   }
 
   public addCallbacks(callbacks: any) {
-    return Object.assign(callbacks, { time: Date.now() });
+    return Object.assign(callbacks, { timestamp: Date.now() });
   }
 }
 
-/**
- *
- * @param {Function|Promise<any>} maybePromise
- * @returns
- */
-const isPromise = (maybePromise: any) =>
+const isPromise = (maybePromise: Promise<any>) =>
   maybePromise &&
   maybePromise instanceof Promise &&
   maybePromise.then &&

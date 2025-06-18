@@ -13,6 +13,7 @@ export async function loadFunction(appDir: string, handler: string): Promise<() 
   const handlerFunc = resolveHandler(app, handlerName);
 
   if (!handlerFunc) {
+    console.log(`${handler} is undefined or not exported`);
     throw new HandlerNotFound(`${handler} is undefined or not exported`);
   }
 
@@ -52,9 +53,10 @@ function resolveHandler(module: Module, handlerName: string): any {
 function splitHandlerString(handler: string): [module: string, handler: string] {
   let match = handler.match(/^([^.]*)\.(.*)$/);
   if (!match || match.length != 3) {
-    throw new Error(`Bad handler format, expect: <module name>.<handler name> got: ${handler}`);
+    throw new Error(`Bad handler format, got: ${handler} wanted: <module name>.<handler name>`);
   }
-  return [match[1], match[2]]; // [module, handler-name]
+
+  return [match[1] as string, match[2] as string]; // [module, handler-name]
 }
 
 class HandlerNotFound extends Error {}

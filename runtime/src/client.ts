@@ -19,6 +19,10 @@ export class Client {
 
     const [host, port] = endpoint.split(":");
 
+    if (host === undefined || port === undefined) {
+      throw new Error("endpoint invalid, got: ${endpoint} wanted: <host>:<port>");
+    }
+
     this.host = host;
     this.port = parseInt(port, 10);
 
