@@ -10,7 +10,7 @@
       "request": "launch",
       "mode": "auto",
       "program": "${workspaceFolder}/main.go",
-      "args": ["serve"]
+      "args": ["serve", "-d", "/home/jay/github/yafaas/runtime/functions"]
     },
   ]
 }

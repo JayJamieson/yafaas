@@ -1,13 +1,15 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
-	"sync"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -24,19 +26,39 @@ type EventBus struct {
 }
 
 type Server struct {
-	mux      *chi.Mux
-	eventBus *EventBus
+	mux        *chi.Mux
+	eventBus   *EventBus
+	nodeRunner *NodeRunner
+	addr       string
+	server     *http.Server
 }
 
-func New() *Server {
+func New(host, port string, args []string) *Server {
 	mux := chi.NewRouter()
-	mux.Use(middleware.Logger)
+
+	mux.Use(middleware.RequestID)
+	mux.Use(middleware.RealIP)
+	// mux.Use(middleware.Logger)
+	mux.Use(middleware.Recoverer)
+
+	addr := host + ":" + port
+
+	nodeRunner := &NodeRunner{
+		Process:       "node",
+		ProcessArgs:   args,
+		Env:           append(os.Environ(), fmt.Sprintf("EVENTS_API=%s", addr)),
+		LogPrefix:     true,
+		LogBufferSize: 64 * 1024, // 64 KiB buffer for logs
+	}
 
 	srv := &Server{
 		mux: mux,
 		eventBus: &EventBus{
 			rx: make(chan Event), // unbuffered as we want to block until we get events
 		},
+		addr:       addr,
+		nodeRunner: nodeRunner,
+		server:     &http.Server{Addr: addr, Handler: mux},
 	}
 
 	mux.Route("/yafaas", func(r chi.Router) {
@@ -58,13 +80,10 @@ func New() *Server {
 		w.Write([]byte("yafaas v0.0.1\n"))
 	})
 
-	return &Server{
-		mux: mux,
-	}
+	return srv
 }
 
 func (s *Server) handleNextEvent(w http.ResponseWriter, r *http.Request) {
-	log.Println("Waiting for event")
 	ctx := r.Context()
 
 	for {
@@ -97,35 +116,52 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 		data: buff,
 		id:   uuid.New(),
 	}
-	log.Println("Sending event to runtime")
 
-	s.eventBus.rx <- event
+	ctx := r.Context()
+	select {
+	case <-ctx.Done():
+		log.Printf("Event send canceled %v\n", ctx.Err())
+		return
+	case s.eventBus.rx <- event:
+	}
+
 }
 
-func (s *Server) Start(host, port string) {
-	addr := host + ":" + port
-	log.Printf("Starting server on %s\n", addr)
+func (s *Server) Start() {
+	idleConnsClosed := make(chan struct{})
 
-	cwd, _ := os.Getwd()
-	targetCmd := exec.Command("node", "index.mjs", cwd+"/runtime/functions")
+	log.Printf("Starting node runner with process %s and args %v\n", s.nodeRunner.Process, s.nodeRunner.ProcessArgs)
+	s.nodeRunner.Start()
 
-	// targetCmd := exec.Command("node", "index.mjs")
+	log.Printf("Starting server on %s\n", s.addr)
 
-	envs := os.Environ()
-	targetCmd.Env = append(envs, fmt.Sprintf("EVENTS_API=%s", addr))
-	targetCmd.Stdout = os.Stdout
-	targetCmd.Stderr = os.Stderr
-
-	var wg sync.WaitGroup
-
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		if err := targetCmd.Run(); err != nil {
-			log.Fatalf("Error running target command: %v\n", err)
+		if err := s.server.ListenAndServe(); err != http.ErrServerClosed {
+			log.Printf("Error ListenAndServe: %v", err)
 		}
 	}()
 
-	http.ListenAndServe(addr, s.mux)
-	wg.Wait()
+	go func() {
+
+		sig := make(chan os.Signal, 1)
+		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+		<-sig
+
+		log.Printf("SIGTERM: no new connections in %s\n", 5*time.Second)
+		<-time.Tick(5 * time.Second)
+
+		// The maximum time to wait for active connections whilst shutting down is
+		// equivalent to the maximum execution time i.e. writeTimeout.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := s.server.Shutdown(ctx); err != nil {
+			log.Printf("Error in Shutdown: %v", err)
+		}
+
+		close(idleConnsClosed)
+	}()
+
+	<-idleConnsClosed
+	log.Println("Server stopped")
 }

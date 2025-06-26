@@ -12,10 +12,12 @@ var serveCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		host, _ := cmd.Flags().GetString("host")
 		port, _ := cmd.Flags().GetString("port")
+		funcModule, _ := cmd.Flags().GetString("func")
+		funcDir, _ := cmd.Flags().GetString("fdir")
 
-		app := server.New()
+		app := server.New(host, port, []string{funcModule, funcDir})
 
-		app.Start(host, port)
+		app.Start()
 	},
 }
 
@@ -24,4 +26,6 @@ func init() {
 
 	serveCmd.Flags().StringP("host", "H", "localhost", "Host to bind the server to")
 	serveCmd.Flags().StringP("port", "p", "9000", "Port to bind the server to")
+	serveCmd.Flags().StringP("func", "f", "index.mjs", "Function module to invoke")
+	serveCmd.Flags().StringP("fdir", "d", "./", "Current working directory for the function")
 }
