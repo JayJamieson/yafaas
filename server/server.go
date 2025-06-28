@@ -54,7 +54,8 @@ func New(host, port string, args []string) *Server {
 	srv := &Server{
 		mux: mux,
 		eventBus: &EventBus{
-			sendCh: make(chan Event), // unbuffered as we want to block until we get events
+			sendCh:    make(chan Event), // unbuffered as we want to block until we get events
+			receiveCh: make(chan Event), // unbuffered as we want to block until we get events
 		},
 		addr:       addr,
 		nodeRunner: nodeRunner,
@@ -85,7 +86,6 @@ func New(host, port string, args []string) *Server {
 				data: buff,
 				id:   uuid.MustParse(id),
 			}
-
 			w.WriteHeader(http.StatusOK)
 		})
 	})
@@ -106,7 +106,7 @@ func (s *Server) handleNextEvent(w http.ResponseWriter, r *http.Request) {
 			log.Printf("%v\n", ctx.Err())
 			return
 		case event := <-s.eventBus.sendCh:
-			log.Println("Sending event to runtime")
+			log.Println("Runtime receiving event")
 			id := event.id.String()
 
 			w.Header().Add("Event-Id", id)
@@ -124,7 +124,6 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(err.Error()))
 		return
 	}
-	log.Println("Received event")
 
 	event := Event{
 		data: buff,
@@ -137,13 +136,15 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 		log.Printf("%v\n", ctx.Err())
 		return
 	case s.eventBus.sendCh <- event:
+		break
 	}
 
+	log.Println("Waiting on response from runtime")
 	result := <-s.eventBus.receiveCh
 	log.Printf("Event received: data=%s eventId=%s", result.data, result.id.String())
 
-	w.Write(result.data)
 	w.WriteHeader(http.StatusOK)
+	w.Write(result.data)
 }
 
 func (s *Server) Start() {
