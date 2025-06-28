@@ -6,7 +6,7 @@ import path from "node:path";
  * Attempts to load a user function relative to application directory.
  * NOTE: Only works with ESM modules because ESM is best :)
  */
-export async function loadFunction(appDir: string, handler: string): Promise<() => Promise<unknown>> {
+export default async function loadFunction(appDir: string, handler: string): Promise<() => Promise<unknown>> {
   const [module, handlerName] = splitHandlerString(handler);
 
   let app = await tryImport(appDir, module);

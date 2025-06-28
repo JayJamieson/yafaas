@@ -20,7 +20,7 @@
   "ts-node": {
     "files": true // allow ts-node to include type declarations and module merging
   },
-  "include": ["src", "build.js"],
+  "include": ["src"],
 
   "exclude": ["dist", "functions"]
 }

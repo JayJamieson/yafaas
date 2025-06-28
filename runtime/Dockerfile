@@ -1,7 +1,7 @@
-FROM node:18.18-slim
+FROM node:22-slim
 
-ENV FUNCTION_DIR /var/task
-ENV EVENTS_API host.docker.internal:9000
+ENV FUNCTION_DIR=/var/task
+ENV EVENT_ENDPOINT=host.docker.internal:9000
 
 COPY scripts/entrypoint.sh entrypoint.sh
 COPY scripts/bootstrap /var/runtime/bootstrap

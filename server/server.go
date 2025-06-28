@@ -22,7 +22,8 @@ type Event struct {
 }
 
 type EventBus struct {
-	rx chan Event
+	sendCh    chan Event
+	receiveCh chan Event
 }
 
 type Server struct {
@@ -38,7 +39,6 @@ func New(host, port string, args []string) *Server {
 
 	mux.Use(middleware.RequestID)
 	mux.Use(middleware.RealIP)
-	// mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 
 	addr := host + ":" + port
@@ -46,7 +46,7 @@ func New(host, port string, args []string) *Server {
 	nodeRunner := &NodeRunner{
 		Process:       "node",
 		ProcessArgs:   args,
-		Env:           append(os.Environ(), fmt.Sprintf("EVENTS_API=%s", addr)),
+		Env:           append(os.Environ(), fmt.Sprintf("EVENT_ENDPOINT=%s", addr)),
 		LogPrefix:     true,
 		LogBufferSize: 64 * 1024, // 64 KiB buffer for logs
 	}
@@ -54,7 +54,7 @@ func New(host, port string, args []string) *Server {
 	srv := &Server{
 		mux: mux,
 		eventBus: &EventBus{
-			rx: make(chan Event), // unbuffered as we want to block until we get events
+			sendCh: make(chan Event), // unbuffered as we want to block until we get events
 		},
 		addr:       addr,
 		nodeRunner: nodeRunner,
@@ -62,17 +62,31 @@ func New(host, port string, args []string) *Server {
 	}
 
 	mux.Route("/yafaas", func(r chi.Router) {
-
-		r.Get("/functions/{id}/logs", func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte("logs\n"))
-		})
-
 		r.Get("/events/next", srv.handleNextEvent)
 
 		r.Post("/events", srv.handleEvent)
 
 		r.Post("/events/{id}/error", func(w http.ResponseWriter, r *http.Request) {
 			log.Println("Recieved error response from event invocation")
+		})
+
+		r.Post("/events/{id}/response", func(w http.ResponseWriter, r *http.Request) {
+			id := chi.URLParam(r, "id")
+			log.Printf("Event response for id: %s", id)
+			buff, err := io.ReadAll(r.Body)
+
+			if err != nil {
+				log.Printf("Error reading response body: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
+			srv.eventBus.receiveCh <- Event{
+				data: buff,
+				id:   uuid.MustParse(id),
+			}
+
+			w.WriteHeader(http.StatusOK)
 		})
 	})
 
@@ -91,7 +105,7 @@ func (s *Server) handleNextEvent(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			log.Printf("%v\n", ctx.Err())
 			return
-		case event := <-s.eventBus.rx:
+		case event := <-s.eventBus.sendCh:
 			log.Println("Sending event to runtime")
 			id := event.id.String()
 
@@ -120,11 +134,16 @@ func (s *Server) handleEvent(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	select {
 	case <-ctx.Done():
-		log.Printf("Event send canceled %v\n", ctx.Err())
+		log.Printf("%v\n", ctx.Err())
 		return
-	case s.eventBus.rx <- event:
+	case s.eventBus.sendCh <- event:
 	}
 
+	result := <-s.eventBus.receiveCh
+	log.Printf("Event received: data=%s eventId=%s", result.data, result.id.String())
+
+	w.Write(result.data)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (s *Server) Start() {
@@ -146,9 +165,6 @@ func (s *Server) Start() {
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
 		<-sig
-
-		log.Printf("SIGTERM: no new connections in %s\n", 5*time.Second)
-		<-time.Tick(5 * time.Second)
 
 		// The maximum time to wait for active connections whilst shutting down is
 		// equivalent to the maximum execution time i.e. writeTimeout.

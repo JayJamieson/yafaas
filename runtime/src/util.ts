@@ -5,7 +5,7 @@ export type SerializableError = {
   stack: string | undefined;
 };
 
-export function toSerializableError(error: Error): SerializableError {
+export default function toSerializableError(error: Error): SerializableError {
   return {
     message: error.message,
     // @ts-ignore

@@ -1,8 +1,9 @@
-import { Client } from "./client.js";
-import * as ExitListener from "./exitListener.js";
-import { loadFunction } from "./functionLoader.js";
+import { exit } from "process";
+import { EventClient } from "./client.js";
+import { ExitListener } from "./exit-listener.js";
+import loadFunction from "./function-loader.js";
 import { Runtime } from "./runtime.js";
-import { toSerializableError } from "./util.js";
+import toSerializableError from "./util.js";
 
 /**
  * Heavily inspired from https://github.com/aws/aws-lambda-nodejs-runtime-interface-client/blob/main/src/index.mjs.
@@ -15,33 +16,49 @@ import { toSerializableError } from "./util.js";
  * requests to Request-Response function or Fire-and-Forget events from S3 where no response is needed.
  */
 if (process.argv.length < 3) {
-  console.log("No handler specified");
-  console.log("Using default index.handler");
+  console.error("No handler and run directory specified");
+  console.log("Run as: node /app/dir/here index.handler");
+  exit(1);
 }
 
-const appDir = process.env.FUNCTION_DIR || process.argv[2] || process.cwd(); // defaults /var/task
-const handler = process.argv[3] || "index.handler"; // usually index.handler
+if (!process.env.EVENT_ENDPOINT) {
+  console.error("No event endpoint provided in EVENT_ENDPOINT");
+  exit(1);
+}
+
+const EVENT_ENDPOINT = process.env.EVENT_ENDPOINT;
+const appDir = process.argv[2] || "/var/task";
+const handler = process.argv[3] || "index.handler";
 
 console.log(`Executing '${handler}' in function directory '${appDir}'`);
 
 async function run(appDir: string, handler: string) {
-  if (!process.env.EVENTS_API) {
-    throw new Error("EVENTS_API environment variable is required");
+  if (!EVENT_ENDPOINT) {
+    throw new Error("EVENT_ENDPOINT environment variable is required");
   }
-  const client = new Client(process.env.EVENTS_API);
 
-  let errorCallbacks = {
+  const client = new EventClient.Client(EVENT_ENDPOINT);
+
+  let errorCallbacks: Runtime.ErrorCallbacks = {
     uncaughtException: (error: Error) => {
-      console.log("uncaughtException", JSON.stringify(toSerializableError(error)));
-      process.exit(128)
-      // TODO: implement runtime error endpoint
-      // client.postRuntimeError(JSON.stringify(toSerializableError(error)), () => process.exit(128));
+      console.log(
+        "uncaughtException",
+        JSON.stringify(toSerializableError(error))
+      );
+      client.postRuntimeError(JSON.stringify(toSerializableError(error)), () =>
+        process.exit(128)
+      );
+      process.exit(128);
     },
     unhandledRejection: (error: Error) => {
-      console.log("unhandledRejection", JSON.stringify(toSerializableError(error)));
-      process.exit(128)
-      // TODO: implement runtime error endpoint
-      // client.postRuntimeError(JSON.stringify(toSerializableError(error)), () => process.exit(128));
+      console.log(
+        "unhandledRejection",
+        JSON.stringify(toSerializableError(error))
+      );
+      client.postRuntimeError(JSON.stringify(toSerializableError(error)), () =>
+        process.exit(128)
+      );
+      process.exit(128);
     },
   };
 
@@ -65,22 +82,17 @@ async function run(appDir: string, handler: string) {
   ExitListener.reset();
   process.on("beforeExit", ExitListener.invoke);
 
-
   const handlerFunc = await loadFunction(appDir, handler);
 
-  new Runtime(client, handlerFunc, errorCallbacks).scheduleInvoke();
+  new Runtime.Executor(client, handlerFunc, errorCallbacks).scheduleInvoke();
 }
-
-// Use when running as main process in docker container
-// await run(appDir, handler);
-// run(appDir, handler).catch((reason) => {
-//    console.log(reason);
-//    process.exit(1);
-// });
 
 try {
   await run(appDir, handler);
 } catch (err) {
-  console.error("Fatal error:", err instanceof Error ? err.stack || err.message : err);
+  console.error(
+    "Fatal error:",
+    err instanceof Error ? err.stack || err.message : err
+  );
   process.exit(1);
 }
